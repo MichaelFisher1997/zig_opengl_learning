@@ -1,73 +1,98 @@
 {
-  description = "Zig Devshell";
+  description = "A Nix-flake-based C/C++ development environment";
 
-  inputs.devshell.url = "github:numtide/devshell";
-  inputs.flake-utils.url = "github:numtide/flake-utils";
-  inputs.zig.url = "github:mitchellh/zig-overlay";
-	inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
-  inputs.flake-compat = {
-    url = "github:edolstra/flake-compat";
-    flake = false;
+  inputs = {
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.*.tar.gz";
+    systems.url = "github:nix-systems/default";
   };
 
-  outputs = {
-    flake-utils,
-    devshell,
-    nixpkgs,
-    zig,
-    ...
-  }:
-    flake-utils.lib.eachDefaultSystem (system: {
-      devShells.default = let
-        pkgs = import nixpkgs {
-          inherit system;
-
-          overlays = [devshell.overlays.default zig.overlays.default];
-        };
-      in
-        pkgs.mkShell {
-          packages = with pkgs; [
-            zigpkgs.default
-            zls
-          ];
-					
-					buildInputs = with pkgs; [
-								glfw-wayland
-								glm
-								assimp
-								# libdecor
-								mesa
-								alsa-lib
-								dbus
-								fontconfig
-								libGL
-								libpulseaudio
-								libxkbcommon
-								makeWrapper
-								patchelf
-								speechd
-								udev
-								# xwayland
-								xorg.libX11
-								xorg.libXcursor
-								xorg.libXext
-								xorg.libXfixes
-								xorg.libXi
-								xorg.libXinerama
-								xorg.libXrandr
-								xorg.libXrender
-					];
-					# DISPLAY=":1";
-
-					# shellHook = '' export LD_LIBRARY_PATH=${pkgs.wayland}/lib:$LD_LIBRARY_PATH '';
-					shellHook = ''
-					export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${
-						with pkgs;
-						pkgs.lib.makeLibraryPath [ libGL xorg.libX11 xorg.libXi libxkbcommon mesa xorg.libXrender xorg.libXinerama glfw-wayland]
-					}"
-					'';
-
-        };
-			});
-	}
+  outputs =
+    {
+      self,
+      nixpkgs,
+      systems,
+    }:
+    let
+      forEachSupportedSystem =
+        f:
+        nixpkgs.lib.genAttrs (import systems) (
+          system:
+          f {
+            pkgs = import nixpkgs { inherit system; };
+          }
+        );
+    in
+    {
+      packages = forEachSupportedSystem (
+        {
+          pkgs,
+        }:
+        {
+          default =
+            pkgs.callPackage ./package.nix
+              {
+              };
+        }
+      );
+      devShells = forEachSupportedSystem (
+        {
+          pkgs,
+        }:
+        {
+          default =
+            pkgs.mkShell.override
+              {
+                # Override stdenv in order to change compiler:
+                # stdenv = pkgs.clangStdenv;
+              }
+              rec {
+                packages =
+                  with pkgs;
+                  [
+                    pkg-config
+                    autoPatchelfHook
+                    installShellFiles
+                    python3
+                    makeWrapper
+                    dotnet-sdk_8
+                    dotnet-runtime_8
+                    vulkan-loader
+                    vulkan-headers
+                    zig
+		    glm
+                    SDL2
+                    fontconfig
+                    fontconfig.lib
+                    scons
+                  ]
+                  ++ pkgs.lib.optionals pkgs.stdenv.targetPlatform.isLinux [
+                    speechd
+                    alsa-lib
+                    xorg.libX11
+                    xorg.libXcursor
+                    xorg.libXinerama
+                    xorg.libXext
+                    xorg.libXrandr
+                    xorg.libXrender
+                    xorg.libXi
+                    xorg.libXfixes
+                    libxkbcommon
+                    dbus
+                    dbus.lib
+                    udev
+                    wayland-scanner
+                    wayland
+                    libdecor
+                    libpulseaudio
+                    glui
+                    libGLU
+                    glm
+		    glfw
+		    gl3w
+                  ];
+                LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath packages;
+              };
+        }
+      );
+    };
+}
